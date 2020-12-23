@@ -39,6 +39,10 @@ func TestBasics(t *testing.T) {
 		t.Errorf("map len = %d; want 2", n)
 	}
 
+	wantEmpty(t)
+}
+
+func wantEmpty(t testing.TB) {
 	const gcTries = 5000
 	for try := 0; try < gcTries; try++ {
 		runtime.GC()
@@ -47,13 +51,52 @@ func TestBasics(t *testing.T) {
 			break
 		}
 		if try == gcTries-1 {
-			t.Errorf("map len = %d after (%d GC tries); want 0", gcTries, try)
+			t.Errorf("map len = %d after (%d GC tries); want 0", n, gcTries)
 		}
 	}
+}
+
+func TestStress(t *testing.T) {
+	iters := 10000
+	if testing.Short() {
+		iters = 1000
+	}
+	var sink []byte
+	for i := 0; i < iters; i++ {
+		_ = Get("foo")
+		sink = make([]byte, 1<<20)
+	}
+	_ = sink
+}
+
+func BenchmarkStress(b *testing.B) {
+	clearMap()
+	v1 := Get("foo")
+	b.RunParallel(func(pb *testing.PB) {
+		var sink []byte
+		for pb.Next() {
+			v2 := Get("foo")
+			if v1 != v2 {
+				b.Fatal("wrong value")
+			}
+			sink = make([]byte, 1<<20)
+		}
+		_ = sink
+	})
+	runtime.GC()
+	wantEmpty(b)
 }
 
 func mapLen() int {
 	mu.Lock()
 	defer mu.Unlock()
 	return len(valMap)
+}
+
+func clearMap() {
+	mu.Lock()
+	defer mu.Unlock()
+	for k := range valMap {
+		delete(valMap, k)
+	}
 }
